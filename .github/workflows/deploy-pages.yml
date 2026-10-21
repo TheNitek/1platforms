@@ -25,7 +25,7 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Configure Pages
-        uses: actions/configure-pages@v5
+        uses: actions/configure-pages@v6
 
       - name: Stage static site
         run: mkdir -p _site && cp index.html style.css game.js _site/
