@@ -41,11 +41,11 @@ The Sundown countdown continues during tasks and is shown as a segmented bar, no
 - Landing feedback is a brief green/red platform flash, not a floating text badge. A decoy fork also triggers a brief red field flash with **BAD CHOICE**.
 - Landing on a decoy removes compliance, creates a flying migration hurdle, and immediately opens its short mandatory clearance task. Compliance reaching zero ends the run.
 - Each active hurdle visibly orbits the nerd as tangled red tape and reduces horizontal movement/jump control. The clearance task uses only highlighted keycaps or arrow symbols, with no explanatory prose; arrow inputs visibly animate the nerd's dance.
-- About one jump in five spawns a titled, outlined burning compliance hoop between platforms. Pass through its cyan-marked center for +5 compliance; touching the flaming rim costs 25 compliance and 0.65 seconds of Sundown.
+- About one jump in five spawns a titled, outlined burning compliance hoop between platforms. Pass through its cyan-marked center for +5 compliance; touching the flaming rim costs 25 compliance and 0.65 seconds of Sundown, while passing outside the visible hoop is harmless.
 - Very rarely, a Downgrade event removes the current platform, flashes **DOWNGRADE**, and drops the nerd toward a recovery platform that scrolls into view from below. Steer onto it. Random events are separated by a cooldown so they cannot chain.
 - A rare Management Intervention inverts horizontal controls until the next distinct platform is reached; its shared screen alert remains visible throughout and the footer shows the reversed mapping.
 - A very rare New Compliance Framework event cuts current compliance in half. Event survival counts are tracked by type and shown on the game-over screen.
-- Compliance stamps appear on only some jumps and have a tight pickup radius; collect them for a small score/compliance bonus.
+- Compliance stamps appear on only some jumps, are offset from the direct route between platforms, and have a tight pickup radius; collect them for a small score/compliance bonus.
 - Every compliance gain/loss briefly floats a green/red number beside the player/platform.
 - Falling past the active platform, running out the Sundown countdown, or reaching zero compliance ends the run. Best score is saved locally when browser storage is available.
 

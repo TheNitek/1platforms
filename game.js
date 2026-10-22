@@ -5,6 +5,8 @@
   const ctx = canvas.getContext('2d');
   const W = 480;
   const H = 320;
+  const HOOP_SAFE_RADIUS = 13;
+  const HOOP_RIM_OUTER_RADIUS = 30;
 
   function resizeCanvasResolution() {
     const cssWidth = canvas.getBoundingClientRect().width || W;
@@ -266,13 +268,20 @@
     });
 
     const truePlatform = choices[trueIndex];
-    badge = Math.random() < 0.3
-      ? {
-        x: (currentPlatform.x + truePlatform.x) / 2,
-        y: (currentPlatform.y + targetY) / 2,
+    badge = null;
+    if (Math.random() < 0.3) {
+      const midpoint = (currentPlatform.x + truePlatform.x) / 2;
+      const availableSides = [-1, 1].filter((side) =>
+        (side < 0 ? midpoint - 12 : W - 12 - midpoint) >= 26,
+      );
+      const side = availableSides[randomInt(availableSides.length)];
+      const maxOffset = side < 0 ? midpoint - 12 : W - 12 - midpoint;
+      badge = {
+        x: midpoint + side * randomBetween(26, Math.min(40, maxOffset)),
+        y: (currentPlatform.y + targetY) / 2 + randomBetween(-8, 8),
         collected: false,
-      }
-      : null;
+      };
+    }
 
     const direction = Math.sign(truePlatform.x - currentPlatform.x);
     complianceHoop = Math.random() < 0.22
@@ -562,6 +571,7 @@
     const requestedDirection = (right ? 1 : 0) - (left ? 1 : 0);
     const direction = controlsInverted ? -requestedDirection : requestedDirection;
     const jumpSpeed = Math.max(98, 184 - hurdles.length * 22);
+    const previousX = player.x;
 
     if (direction !== 0) {
       player.x += direction * jumpSpeed * dt;
@@ -577,21 +587,25 @@
       if (downgradeFall) player.vy = Math.min(player.vy, 230);
       player.y += player.vy * dt;
       if (complianceHoop?.status === 'burning' && previousY - 10 > complianceHoop.y && player.y - 10 <= complianceHoop.y) {
-        if (Math.abs(player.x - complianceHoop.x) <= 9) {
+        const crossingProgress = (previousY - 10 - complianceHoop.y) / (previousY - player.y);
+        const crossingX = previousX + (player.x - previousX) * crossingProgress;
+        const horizontalDistance = Math.abs(crossingX - complianceHoop.x);
+        if (horizontalDistance <= HOOP_SAFE_RADIUS) {
           complianceHoop.status = 'cleared';
           changeCompliance(5, player.x, player.y - 20);
           score += 40;
           flashPlatform(currentPlatform, 'success', 0.65);
-        } else {
+          complianceHoop.expiresAt = elapsed + 0.8;
+        } else if (horizontalDistance <= HOOP_RIM_OUTER_RADIUS) {
           complianceHoop.status = 'hit';
           changeCompliance(-25, player.x, player.y - 20);
           sundown = Math.max(0, sundown - 0.65);
           flashPlatform(currentPlatform, 'error', 0.65);
-        }
-        complianceHoop.expiresAt = elapsed + 0.8;
-        if (compliance <= 0) {
-          endGame('A burning compliance hoop consumed the last compliance points.');
-          return;
+          complianceHoop.expiresAt = elapsed + 0.8;
+          if (compliance <= 0) {
+            endGame('A burning compliance hoop consumed the last compliance points.');
+            return;
+          }
         }
       }
 
