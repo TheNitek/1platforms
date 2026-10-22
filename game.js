@@ -5,6 +5,8 @@
   const ctx = canvas.getContext('2d');
   const W = 480;
   const H = 320;
+  const JUMP_BUFFER_TIME = 0.12;
+  const COYOTE_TIME = 0.12;
   const HOOP_SAFE_RADIUS = 13;
   const HOOP_RIM_OUTER_RADIUS = 30;
 
@@ -53,6 +55,7 @@
   ];
 
   let state = 'menu';
+  let helpReturnState = 'menu';
   let lastFrame = 0;
   let elapsed = 0;
   let platforms = [];
@@ -64,6 +67,9 @@
   let player = null;
   let cameraY = 0;
   let round = 1;
+  let cleanStreak = 0;
+  let lastGroundedAt = -Infinity;
+  let jumpBufferedUntil = -Infinity;
   let forkCountdown = 0;
   let eventCooldown = 0;
   let scopeCreepPending = false;
@@ -73,8 +79,10 @@
   let compliance = 75;
   let sundown = 8;
   let sundownMax = 8;
+  let sundownExpired = false;
   let screenAlert = null;
   let floatingNumbers = [];
+  let particles = [];
   let eventStats = null;
   let hurdles = [];
   let activeTask = null;
@@ -125,6 +133,32 @@
     return change;
   }
 
+  function spawnParticles(x, y, color, count = 6) {
+    for (let i = 0; i < count; i += 1) {
+      const duration = randomBetween(0.28, 0.48);
+      particles.push({
+        x,
+        y,
+        vx: randomBetween(-48, 48),
+        vy: randomBetween(-86, -34),
+        color,
+        size: randomInt(3) + 2,
+        duration,
+        remaining: duration,
+      });
+    }
+  }
+
+  function updateParticles(dt) {
+    for (const particle of particles) {
+      particle.x += particle.vx * dt;
+      particle.y += particle.vy * dt;
+      particle.vy += 150 * dt;
+      particle.remaining -= dt;
+    }
+    particles = particles.filter((particle) => particle.remaining > 0);
+  }
+
   function createEventStats() {
     return Object.fromEntries(EVENT_LABELS.map(([key]) => [key, { seen: 0, survived: 0 }]));
   }
@@ -161,6 +195,9 @@
     score = 0;
     compliance = 75;
     round = 1;
+    cleanStreak = 0;
+    lastGroundedAt = elapsed;
+    jumpBufferedUntil = -Infinity;
     forkCountdown = 5 + randomInt(4);
     eventCooldown = 0;
     scopeCreepPending = false;
@@ -171,8 +208,10 @@
     previousPlatform = null;
     sundownMax = randomBetween(5, 7);
     sundown = sundownMax;
+    sundownExpired = false;
     screenAlert = null;
     floatingNumbers = [];
+    particles = [];
     eventStats = createEventStats();
     platforms = [];
     choices = [];
@@ -256,7 +295,7 @@
       .map(({ x }) => x)
       .sort((a, b) => a - b);
     const trueIndex = randomInt(selected.length);
-    const targetY = currentPlatform.y - 60;
+    const targetY = currentPlatform.y - (52 + randomInt(11));
     const usedNames = new Set();
     choices = selected.map((x, index) => {
       const isTrue = index === trueIndex;
@@ -290,15 +329,31 @@
   }
 
   function jump() {
-    if (!player.grounded || activeTask || state !== 'playing' || downgradeState?.phase === 'falling') return;
+    if (activeTask || state !== 'playing' || downgradeState?.phase === 'falling') return;
     if (keysDown.has('arrowdown') || keysDown.has('s')) {
-      if (!previousPlatform) return;
+      if (!player.grounded || !previousPlatform) return;
+      jumpBufferedUntil = -Infinity;
+      lastGroundedAt = elapsed - COYOTE_TIME - 0.01;
+      cleanStreak = 0;
       downJumpState = true;
       player.grounded = false;
       player.vy = 40;
       player.walkFrame = 0;
       return;
     }
+    jumpBufferedUntil = elapsed + JUMP_BUFFER_TIME;
+    tryBufferedJump();
+  }
+
+  function tryBufferedJump() {
+    if (jumpBufferedUntil < elapsed) {
+      jumpBufferedUntil = -Infinity;
+      return;
+    }
+    if (activeTask || state !== 'playing' || downgradeState?.phase === 'falling') return;
+    if (!player.grounded && elapsed - lastGroundedAt > COYOTE_TIME) return;
+    jumpBufferedUntil = -Infinity;
+    lastGroundedAt = elapsed - COYOTE_TIME - 0.01;
     downJumpState = false;
     player.grounded = false;
     player.vy = -296;
@@ -316,6 +371,7 @@
 
   function openHurdleTask() {
     if (!player.grounded || !hurdles.length || activeTask) return;
+    jumpBufferedUntil = -Infinity;
     activeTask = hurdles[0];
     taskProgress = 0;
     taskErrorUntil = 0;
@@ -374,6 +430,8 @@
     player.y = platform.y;
     player.vy = 0;
     player.grounded = true;
+    lastGroundedAt = elapsed;
+    spawnParticles(player.x, platform.y - 3, platform === previousPlatform ? COLORS.orange : platform.isTrue ? COLORS.green : COLORS.red, 7);
     if (controlsInverted && platform !== currentPlatform) {
       controlsInverted = false;
       markEventSurvived('management');
@@ -394,6 +452,7 @@
       downgradeState = null;
       sundownMax = randomBetween(5, 7);
       sundown = sundownMax;
+      sundownExpired = false;
       flashPlatform(currentPlatform, 'success', 0.7);
       createChoices();
       return;
@@ -412,6 +471,7 @@
       flashScreenAlert('COMPLIANCE VIOLATION', { y: 108, duration: 1.3 });
       sundownMax = randomBetween(4, 5.5);
       sundown = sundownMax;
+      sundownExpired = false;
       flashPlatform(platform, 'error', 1.2);
       if (compliance <= 0) {
         endGame('Dropping to the previous platform cost 75% compliance, leaving none.');
@@ -421,13 +481,18 @@
       return;
     }
 
-    if (platform === currentPlatform) return;
+    if (platform === currentPlatform) {
+      if (sundownExpired) endGame('Sundown expired, and you landed back on the same platform.');
+      return;
+    }
     downJumpState = false;
+    sundownExpired = false;
 
     platform.settled = true;
     const wasTrue = platform.isTrue;
     const scopeCreepChoice = scopeCreepRound !== null && choices.includes(platform) && platform.targetRound === scopeCreepRound;
     const scoreBeforeLanding = score;
+    const streakBeforeLanding = cleanStreak;
     const complianceBeforeLanding = compliance;
     const platformBeforeLanding = currentPlatform;
     currentPlatform = platform;
@@ -436,13 +501,16 @@
     if (eventCooldown > 0) eventCooldown -= 1;
 
     if (wasTrue) {
+      cleanStreak += 1;
+      const streakBonus = Math.min(cleanStreak - 1, 5) * 20;
       const award = 8 + Math.min(round, 8);
       changeCompliance(award, platform.x, platform.y - 22);
-      score += 100 + round * 15;
+      score += 100 + round * 15 + streakBonus;
       sundownMax = randomBetween(5, 7);
       sundown = sundownMax;
       flashPlatform(platform, 'success');
     } else {
+      cleanStreak = 0;
       changeCompliance(-18, platform.x, platform.y - 22);
       score = Math.max(0, score - 25);
       addHurdle();
@@ -500,9 +568,11 @@
         recoveryPlatform.flash = { kind: 'target', startedAt: elapsed, expiresAt: elapsed + 1.6 };
         platforms = [recoveryPlatform];
         choices = [];
+        jumpBufferedUntil = -Infinity;
         complianceHoop = null;
         badge = null;
         score = scoreBeforeLanding;
+        cleanStreak = streakBeforeLanding;
         changeCompliance(complianceBeforeLanding - compliance, platform.x, platform.y - 22);
         round = retryRound;
         player.grounded = false;
@@ -554,14 +624,19 @@
   function update(dt) {
     if (state === 'gameover') {
       elapsed += dt;
+      updateParticles(dt);
       return;
     }
     if (state !== 'playing') return;
     elapsed += dt;
+    updateParticles(dt);
     sundown = Math.max(0, sundown - dt);
     if (sundown <= 0) {
-      endGame('Sundown. Your platform has entered end-of-life support.');
-      return;
+      sundownExpired = true;
+      if (player.grounded) {
+        endGame('The platform reached sundown while you were still standing on it.');
+        return;
+      }
     }
 
     if (activeTask) return;
@@ -572,6 +647,7 @@
     const direction = controlsInverted ? -requestedDirection : requestedDirection;
     const jumpSpeed = Math.max(98, 184 - hurdles.length * 22);
     const previousX = player.x;
+    if (player.grounded) lastGroundedAt = elapsed;
 
     if (direction !== 0) {
       player.x += direction * jumpSpeed * dt;
@@ -594,11 +670,13 @@
           complianceHoop.status = 'cleared';
           changeCompliance(5, player.x, player.y - 20);
           score += 40;
+          spawnParticles(crossingX, complianceHoop.y, COLORS.cyan, 8);
           flashPlatform(currentPlatform, 'success', 0.65);
           complianceHoop.expiresAt = elapsed + 0.8;
         } else if (horizontalDistance <= HOOP_RIM_OUTER_RADIUS) {
           complianceHoop.status = 'hit';
           changeCompliance(-25, player.x, player.y - 20);
+          spawnParticles(crossingX, complianceHoop.y, COLORS.orange, 6);
           sundown = Math.max(0, sundown - 0.65);
           flashPlatform(currentPlatform, 'error', 0.65);
           complianceHoop.expiresAt = elapsed + 0.8;
@@ -613,6 +691,7 @@
         badge.collected = true;
         changeCompliance(7, player.x, player.y - 22);
         score += 35;
+        spawnParticles(badge.x, badge.y, COLORS.gold, 9);
         flashPlatform(currentPlatform, 'info', 0.65);
       }
 
@@ -644,6 +723,7 @@
       return;
     }
 
+    tryBufferedJump();
     const targetCamera = player.y - (downgradeState?.phase === 'falling' ? 82 : 200);
     cameraY += (targetCamera - cameraY) * Math.min(1, dt * 5);
     if (complianceHoop && complianceHoop.status !== 'burning' && elapsed >= complianceHoop.expiresAt) complianceHoop = null;
@@ -854,6 +934,15 @@
     rect(x - 4, y - 2, 8, 4, '#f3ba58');
   }
 
+  function drawParticles() {
+    const previousAlpha = Number.isFinite(ctx.globalAlpha) ? ctx.globalAlpha : 1;
+    for (const particle of particles) {
+      ctx.globalAlpha = clamp(particle.remaining / particle.duration, 0, 1);
+      rect(particle.x - particle.size / 2, particle.y - cameraY - particle.size / 2, particle.size, particle.size, particle.color);
+    }
+    ctx.globalAlpha = previousAlpha;
+  }
+
   function drawNerd() {
     if (!player) return;
     const x = Math.round(player.x);
@@ -919,7 +1008,8 @@
     drawSundownBar(W - 140, 21, 128, 10);
 
     rect(9, 43, W - 18, 18, '#25243e');
-    text(`ROUND ${String(round).padStart(2, '0')}`, 16, 55, COLORS.cream, 9);
+    const streakLabel = cleanStreak > 1 ? `  STREAK ${cleanStreak}` : '';
+    text(`ROUND ${String(round).padStart(2, '0')}${streakLabel}`, 16, 55, COLORS.cream, 9);
     hurdles.slice(0, 8).forEach((hurdle, index) => {
       drawHurdleIcon(W - 15 - index * 17, 73, hurdle.kind, 0.8);
     });
@@ -955,7 +1045,7 @@
       : activeTask.prompt.map((direction) => ({ left: '←', right: '→', up: '↑', down: '↓' }[direction]));
     const gap = 4;
     const tileW = activeTask.kind === 'type' ? 26 : 32;
-    const tileH = 29;
+    const tileH = danceTask ? 35 : 29;
     const sequenceWidth = symbols.length * tileW + (symbols.length - 1) * gap;
     const startX = panelX + 48 + (panelW - 48 - sequenceWidth) / 2;
     const tileY = panelY + (danceTask ? 24 : 17);
@@ -968,7 +1058,13 @@
       rect(x, tileY + 2, tileW, tileH, '#17182e');
       rect(x, tileY, tileW, tileH - 2, face);
       rect(x + 3, tileY + 3, tileW - 6, 2, '#fff4d6');
-      text(symbol, x + tileW / 2, tileY + 20, '#17182e', activeTask.kind === 'type' ? 11 : 16, 'center');
+      if (danceTask) {
+        const wasdKey = { '←': 'A', '→': 'D', '↑': 'W', '↓': 'S' }[symbol];
+        text(symbol, x + tileW / 2, tileY + 17, '#17182e', 14, 'center');
+        text(wasdKey, x + tileW / 2, tileY + 30, '#17182e', 7, 'center');
+      } else {
+        text(symbol, x + tileW / 2, tileY + 20, '#17182e', 11, 'center');
+      }
     });
 
     const progressX = panelX + 18;
@@ -998,15 +1094,46 @@
     rect(0, H - 20, W, 20, '#17182e');
     rect(0, H - 20, W, 1, '#59476e');
     if (activeTask) return;
-    const jumpHint = previousPlatform ? 'SPACE JUMP  |  ↓+SPACE DROP' : 'SPACE JUMP';
+    const jumpHint = previousPlatform ? 'SPACE JUMP  |  ↓+SPACE DROP  |  H HELP' : 'SPACE JUMP  |  H HELP';
     if (controlsInverted) {
       text('A / ← = RIGHT', 10, H - 7, COLORS.gold, 7);
       text('D / → = LEFT', 155, H - 7, COLORS.gold, 7);
-      text(jumpHint, W - 10, H - 7, COLORS.cream, 7, 'right');
+      text(jumpHint, W - 10, H - 7, COLORS.cream, 6, 'right');
     } else {
       text('A / D OR ← →  MOVE', 10, H - 7, COLORS.cream, 8);
-      text(jumpHint, W - 10, H - 7, COLORS.cream, 7, 'right');
+      text(jumpHint, W - 10, H - 7, COLORS.cream, 6, 'right');
     }
+  }
+
+  function drawHelpScreen() {
+    rect(0, 0, W, H, '#17182e');
+    rect(12, 10, W - 24, 267, '#25243e');
+    rect(12, 10, W - 24, 3, COLORS.gold);
+    text('FIELD GUIDE', W / 2, 30, COLORS.cream, 13, 'center');
+    text('THE ROADMAP SAYS Q3. THE PLATFORM COUNT DISAGREES.', W / 2, 45, COLORS.cyan, 7, 'center');
+    rect(W / 2, 55, 1, 207, '#51436e');
+
+    const entry = (x, y, title, line1, line2, color = COLORS.gold) => {
+      text(title, x, y, color, 7, 'left');
+      text(line1, x, y + 10, COLORS.cream, 6, 'left');
+      if (line2) text(line2, x, y + 19, COLORS.muted, 6, 'left');
+    };
+
+    entry(24, 65, 'FORKS', 'One true platform among 2–3 names.', 'They are blind guesses. Trust your gut.');
+    entry(24, 106, 'DOWNGRADE', 'Your ledge vanishes. Fall toward', 'the recovery deck below; steer onto it.');
+    entry(24, 147, 'SCOPE CREEP', 'The next fork gets one extra vendor.', 'Procurement was “just looking.”');
+    entry(24, 188, 'MANAGEMENT INTERVENTION', 'Left/right reverses until you land.', 'The committee calls this alignment.');
+    entry(24, 229, 'NEW COMPLIANCE FRAMEWORK', 'Very rare. Cuts compliance in half.', 'The PDF is 50% longer.');
+
+    entry(254, 65, 'SUNDOWN', '5–7s after success; 4–5.5 after decoys.', 'At zero: airborne may finish; same ledge fails.');
+    entry(254, 106, 'COMPLIANCE HOOPS', 'Cyan center: +5 compliance.', 'Flaming rim: −25 and lose time.');
+    entry(254, 147, 'COMPLIANCE STAMPS', 'Only some jumps; tiny pickup zone.', '+7 compliance and score.');
+    entry(254, 188, 'MIGRATION DEBT', 'Decoys add orbiting red tape.', 'It slows jumps; keycap task starts.');
+    entry(254, 229, 'DOWN-JUMP', '↓ + Space drops to the last ledge.', 'It costs 75% of your compliance.');
+
+    text('GAME OVER TRACKS EVENTS SURVIVED / SEEN', W / 2, 269, COLORS.lavender, 6, 'center');
+    rect(0, H - 29, W, 29, '#17182e');
+    text('H  /  ESC  /  ENTER   RETURN TO GAME', W / 2, H - 9, COLORS.green, 8, 'center');
   }
 
   function drawMenu() {
@@ -1025,11 +1152,11 @@
     rect(31, 39, W - 62, 4, COLORS.gold);
     text('1PLATFORMS', W / 2, 82, COLORS.cream, 25, 'center');
     text('WE’LL BE DOWN TO ONE BY Q3.', W / 2, 105, COLORS.cyan, 9, 'center');
-    text('GOAL: MIGRATE TO THE ONE TRUE PLATFORM', W / 2, 140, COLORS.gold, 8, 'center');
-    text('A / D OR ← →  MOVE', W / 2, 162, COLORS.cream, 10, 'center');
-    text('SPACE  JUMP', W / 2, 184, COLORS.cream, 10, 'center');
-    text('↓ + SPACE  DROP TO LAST PLATFORM', W / 2, 202, COLORS.gold, 8, 'center');
-    text('PRESS ENTER TO START', W / 2, 226, COLORS.green, 11, 'center');
+    text('A / D OR ← →  MOVE', W / 2, 150, COLORS.cream, 10, 'center');
+    text('SPACE  JUMP', W / 2, 170, COLORS.cream, 10, 'center');
+    text('↓ + SPACE  DROP TO LAST PLATFORM', W / 2, 190, COLORS.gold, 8, 'center');
+    text('H  HELP', W / 2, 210, COLORS.cyan, 9, 'center');
+    text('PRESS ENTER TO START', W / 2, 232, COLORS.green, 11, 'center');
     player = null;
   }
 
@@ -1057,6 +1184,10 @@
 
   function draw() {
     drawBackground();
+    if (state === 'help') {
+      drawHelpScreen();
+      return;
+    }
     if (state === 'menu') {
       drawMenu();
       return;
@@ -1066,6 +1197,7 @@
     drawBadge();
     drawComplianceHoop();
     drawNerd();
+    drawParticles();
     drawHurdles();
     drawDowngradeCue();
     drawHud();
@@ -1085,6 +1217,21 @@
     const key = normalizeKey(event);
     if (['arrowleft', 'arrowright', 'arrowup', 'arrowdown', ' '].includes(key)) event.preventDefault();
 
+    if (state === 'help') {
+      if (key === 'h' || key === 'escape' || key === 'enter') {
+        state = helpReturnState;
+        keysDown.clear();
+        canvas.focus({ preventScroll: true });
+      }
+      return;
+    }
+    if (key === 'h' && ['menu', 'playing', 'gameover'].includes(state)) {
+      helpReturnState = state;
+      state = 'help';
+      keysDown.clear();
+      return;
+    }
+
     if (state === 'menu' && (key === 'enter' || key === ' ')) {
       startGame();
       return;
@@ -1101,8 +1248,9 @@
       return;
     }
 
+    const wasDown = keysDown.has(key);
     keysDown.add(key);
-    if (key === ' ' || key === 'arrowup' || key === 'w') jump();
+    if (!wasDown && !event.repeat && (key === ' ' || key === 'arrowup' || key === 'w')) jump();
   });
 
   window.addEventListener('keyup', (event) => {

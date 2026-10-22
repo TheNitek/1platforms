@@ -25,18 +25,22 @@ For the first deployment, enable Pages in the repository's **Settings → Pages*
 ## Controls
 
 - `Enter`: start or restart.
+- `H`: open the Field Guide from the title, game, or game-over screen; `H`, `Escape`, or `Enter` returns.
 - `A` / `D` or `←` / `→`: move left and right.
 - `Space`, `W`, or `↑`: jump.
 - `↓` + `Space`: drop to the previous platform; this costs 75% of current compliance and triggers a Compliance Violation alert.
+- Jump presses have a 0.12-second buffer and coyote-time window so near-miss timing still feels responsive.
 - A decoy landing automatically starts a mandatory hurdle task; there is no separate clear button.
 - Typing task: enter the displayed keycap sequence; Backspace corrects the current entry.
 - Dance task: follow the displayed arrow-key sequence with arrow keys or WASD.
 
-The Sundown countdown continues during tasks and is shown as a segmented bar, not a number. It is randomized to 5–7 seconds after a correct landing and 4–5.5 seconds after a decoy. Incorrect task input consumes a little time.
+The Field Guide pauses the game. The Sundown countdown continues during hurdle tasks and is shown as a segmented bar, not a number. It is randomized to 5–7 seconds after a correct landing and 4–5.5 seconds after a decoy. Reaching zero while grounded ends the run; an airborne jump may finish, but landing back on the same platform ends the run. Incorrect task input consumes a little time.
 
 ## Game loop and rules
 
 - Most jumps offer one platform. Forks appear after 5–8 single-platform jumps; ordinary forks have two platforms, with three-way forks rare. A rare Scope Creep event adds a decoy to the next fork.
+- Platform rises vary from 52–62 pixels while staying within the jump's reachable height, even at the capped frame step.
+- Consecutive correct landings build a score-only streak bonus, capped at +100; decoys and down-jumps reset it.
 - Platform signs show only randomly generated corporate names. Forks are blind guesses; do not add role tags or clue subtitles to platform signs.
 - Landing feedback is a brief green/red platform flash, not a floating text badge. A decoy fork also triggers a brief red field flash with **BAD CHOICE**.
 - Landing on a decoy removes compliance, creates a flying migration hurdle, and immediately opens its short mandatory clearance task. Compliance reaching zero ends the run.
@@ -46,6 +50,7 @@ The Sundown countdown continues during tasks and is shown as a segmented bar, no
 - A rare Management Intervention inverts horizontal controls until the next distinct platform is reached; its shared screen alert remains visible throughout and the footer shows the reversed mapping.
 - A very rare New Compliance Framework event cuts current compliance in half. Event survival counts are tracked by type and shown on the game-over screen.
 - Compliance stamps appear on only some jumps, are offset from the direct route between platforms, and have a tight pickup radius; collect them for a small score/compliance bonus.
+- Brief pixel-particle bursts mark landings and compliance-stamp/hoop outcomes; keep effects lightweight and authored with the existing rectangle helper.
 - Every compliance gain/loss briefly floats a green/red number beside the player/platform.
 - Falling past the active platform, running out the Sundown countdown, or reaching zero compliance ends the run. Best score is saved locally when browser storage is available.
 
@@ -54,6 +59,8 @@ The Sundown countdown continues during tasks and is shown as a segmented bar, no
 - `index.html`: page shell, metadata, canvas, and script/style references.
 - `style.css`: responsive page framing and smooth canvas scaling. Keep the game legible on narrow screens.
 - `game.js`: all gameplay state, input, simple pixel-art drawing, and animation. It is a self-invoking vanilla JavaScript module; avoid adding frameworks or server dependencies for this single-page game.
+- `README.md`: player-facing controls, rules, event guide, and local/GitHub Pages instructions.
+- The in-game Field Guide is drawn in `drawHelpScreen()` and should stay concise, split across mechanics/events/collectibles, and joke in the same corporate-roadmap voice.
 - `.github/workflows/deploy-pages.yml`: deploys the repository's static site to GitHub Pages on pushes to `main`.
 - `AGENTS.md`: maintain these run instructions, controls, gameplay rules, and architectural constraints when making meaningful changes.
 
