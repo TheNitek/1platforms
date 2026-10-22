@@ -285,22 +285,44 @@
     }
     const sourceX = currentPlatform.x;
     const edge = optionCount === 1 ? 50 : 42;
-    const slots = [-140, -70, 0, 70, 140]
+    const slots = [-140, -70, 70, 140]
       .map((offset) => clamp(sourceX + offset, edge, W - edge))
-      .filter((x, index, list) => list.findIndex((other) => Math.abs(other - x) < 68) === index);
-    const selected = slots
-      .map((x) => ({ x, order: Math.random() }))
-      .sort((a, b) => a.order - b.order)
-      .slice(0, optionCount)
-      .map(({ x }) => x)
+      .filter((x, index, list) => list.findIndex((other) => Math.abs(other - x) < 68) === index)
+      .filter((x) => Math.abs(x - sourceX) >= 52);
+    const combos = [];
+    const collectCombos = (start, picked) => {
+      if (picked.length === optionCount) {
+        combos.push(picked.slice());
+        return;
+      }
+      for (let i = start; i < slots.length; i += 1) {
+        picked.push(slots[i]);
+        collectCombos(i + 1, picked);
+        picked.pop();
+      }
+    };
+    collectCombos(0, []);
+    const spacedCombos = combos.filter((combo) =>
+      combo.every((x, index) => index === 0 || x - combo[index - 1] >= 68),
+    );
+    const selected = (spacedCombos.length ? spacedCombos[randomInt(spacedCombos.length)] : slots.slice(0, optionCount))
       .sort((a, b) => a - b);
+    const widths = optionCount === 1 ? SOLO_PLATFORM_WIDTHS : FORK_PLATFORM_WIDTHS;
+    const hasClearGaps = (candidate) => candidate.every((width, index) =>
+      index === 0 ||
+      (candidate[index - 1] + width) / 2 + 12 <= selected[index] - selected[index - 1],
+    );
+    let chosenWidths = selected.map(() => widths[randomInt(widths.length)]);
+    for (let attempt = 0; attempt < 24 && !hasClearGaps(chosenWidths); attempt += 1) {
+      chosenWidths = selected.map(() => widths[randomInt(widths.length)]);
+    }
+    if (!hasClearGaps(chosenWidths)) chosenWidths = selected.map(() => widths[0]);
     const trueIndex = randomInt(selected.length);
     const targetY = currentPlatform.y - (52 + randomInt(11));
     const usedNames = new Set();
     choices = selected.map((x, index) => {
       const isTrue = index === trueIndex;
-      const widths = optionCount === 1 ? SOLO_PLATFORM_WIDTHS : FORK_PLATFORM_WIDTHS;
-      const width = widths[randomInt(widths.length)];
+      const width = chosenWidths[index];
       const platform = makePlatform(x, targetY, isTrue, round, generatePlatformName(usedNames), width);
       platforms.push(platform);
       return platform;

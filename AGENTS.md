@@ -39,6 +39,7 @@ The Field Guide pauses the game. The Sundown countdown continues during hurdle t
 ## Game loop and rules
 
 - Most jumps offer one platform. Forks appear after 5–8 single-platform jumps; ordinary forks have two platforms, with three-way forks rare. A rare Scope Creep event adds a decoy to the next fork.
+- New choices never spawn directly above the current platform. Fork platforms keep at least a 12-pixel gap between bodies (signs need more), so they read as separate choices; near the canvas edge a fork may fall back to two options rather than stacking platforms together.
 - Platform rises vary from 52–62 pixels while staying within the jump's reachable height, even at the capped frame step.
 - Consecutive correct landings build a score-only streak bonus, capped at +100; decoys and down-jumps reset it.
 - Platform signs show only randomly generated corporate names. Forks are blind guesses; do not add role tags or clue subtitles to platform signs.
