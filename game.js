@@ -1011,6 +1011,7 @@
     rect(31, 39, W - 62, 4, COLORS.gold);
     text('1PLATFORMS', W / 2, 82, COLORS.cream, 25, 'center');
     text('WE’LL BE DOWN TO ONE BY Q3.', W / 2, 105, COLORS.cyan, 9, 'center');
+    text('GOAL: MIGRATE TO THE ONE TRUE PLATFORM', W / 2, 140, COLORS.gold, 8, 'center');
     text('A / D OR ← →  MOVE', W / 2, 162, COLORS.cream, 10, 'center');
     text('SPACE  JUMP', W / 2, 184, COLORS.cream, 10, 'center');
     text('↓ + SPACE  DROP TO LAST PLATFORM', W / 2, 202, COLORS.gold, 8, 'center');
